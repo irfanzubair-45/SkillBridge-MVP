@@ -1,0 +1,22 @@
+# Python
+backend/.venv/
+backend/.uv-cache/
+backend/__pycache__/
+backend/**/*.py[cod]
+backend/skillbridge.db
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.npm-cache/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
