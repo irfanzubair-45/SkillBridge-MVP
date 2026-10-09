@@ -145,6 +145,128 @@ function ClickSpark({
   return <div className="click-spark" onClick={handleClick}><canvas ref={canvasRef} aria-hidden="true" />{children}</div>
 }
 
+function ParticleField() {
+  const canvasRef = useRef(null)
+  const frameRef = useRef(null)
+  const pointerRef = useRef({ x: -1000, y: -1000 })
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const context = canvas?.getContext('2d')
+    if (!canvas || !context) return undefined
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const particles = []
+    let width = 0
+    let height = 0
+    let isVisible = !document.hidden
+
+    const resize = () => {
+      width = canvas.parentElement.clientWidth
+      height = canvas.parentElement.clientHeight
+      canvas.width = width
+      canvas.height = height
+      const count = window.innerWidth < 600 ? 18 : 36
+      particles.length = 0
+      for (let index = 0; index < count; index += 1) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: (Math.random() - 0.5) * 0.12,
+          vy: (Math.random() - 0.5) * 0.12,
+          radius: Math.random() * 1.8 + 0.7,
+          color: ['#B6FF4F', '#8B5CF6', '#2DD4BF'][index % 3],
+        })
+      }
+    }
+
+    const draw = () => {
+      if (!isVisible) return
+      context.clearRect(0, 0, width, height)
+      particles.forEach((particle) => {
+        if (!reducedMotion.matches) {
+          particle.x += particle.vx
+          particle.y += particle.vy
+          if (particle.x < -10 || particle.x > width + 10) particle.vx *= -1
+          if (particle.y < -10 || particle.y > height + 10) particle.vy *= -1
+        }
+        const dx = pointerRef.current.x - particle.x
+        const dy = pointerRef.current.y - particle.y
+        const distance = Math.hypot(dx, dy)
+        if (distance < 140 && !reducedMotion.matches) {
+          particle.x -= dx / 2600
+          particle.y -= dy / 2600
+        }
+        context.fillStyle = particle.color
+        context.globalAlpha = 0.34
+        context.beginPath()
+        context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2)
+        context.fill()
+      })
+      context.lineWidth = 0.7
+      for (let first = 0; first < particles.length; first += 1) {
+        for (let second = first + 1; second < particles.length; second += 1) {
+          const distance = Math.hypot(particles[first].x - particles[second].x, particles[first].y - particles[second].y)
+          if (distance < 145) {
+            context.globalAlpha = (1 - distance / 145) * 0.12
+            context.strokeStyle = particles[first].color
+            context.beginPath()
+            context.moveTo(particles[first].x, particles[first].y)
+            context.lineTo(particles[second].x, particles[second].y)
+            context.stroke()
+          }
+        }
+      }
+      context.globalAlpha = 1
+      if (!reducedMotion.matches) frameRef.current = requestAnimationFrame(draw)
+    }
+
+    const onVisibilityChange = () => {
+      isVisible = !document.hidden
+      if (isVisible && !reducedMotion.matches) frameRef.current = requestAnimationFrame(draw)
+    }
+    const onPointerMove = (event) => {
+      const rect = canvas.getBoundingClientRect()
+      pointerRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+    }
+    const onPointerLeave = () => { pointerRef.current = { x: -1000, y: -1000 } }
+
+    resize()
+    draw()
+    const observer = new ResizeObserver(resize)
+    observer.observe(canvas.parentElement)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    canvas.parentElement.addEventListener('pointermove', onPointerMove)
+    canvas.parentElement.addEventListener('pointerleave', onPointerLeave)
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      canvas.parentElement.removeEventListener('pointermove', onPointerMove)
+      canvas.parentElement.removeEventListener('pointerleave', onPointerLeave)
+    }
+  }, [])
+
+  return <canvas className="particle-field" ref={canvasRef} aria-hidden="true" />
+}
+
+function GlassIcon({ name, size = 22 }) {
+  const paths = {
+    discover: 'M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z',
+    match: 'M7 17 17 7m-7-2H7a2 2 0 0 0-2 2v3m12 6h-3a2 2 0 0 1-2-2v-3',
+    create: 'm13 2-8 11h6l-1 9 8-11h-6l1-9Z',
+    design: 'M4 19.5V5.8A1.8 1.8 0 0 1 5.8 4h12.4A1.8 1.8 0 0 1 20 5.8v8.4M4 19.5h13a3 3 0 0 0 3-3M4 19.5a3 3 0 0 0 3 3h9m-7-14h7m-7 4h4',
+    code: 'm8 9-3 3 3 3m8-6 3 3-3 3m-3-10-4 14',
+    research: 'M10.5 19a7.5 7.5 0 1 1 5.3-12.8L21 11.4M15 15l5.5 5.5M8 10h5m-5 3h3',
+    startup: 'M12 2c4 3 7 6.6 7 11a7 7 0 1 1-14 0c0-4.4 3-8 7-11Zm0 8c1.7 1.3 2.5 2.7 2.5 4a2.5 2.5 0 1 1-5 0c0-1.3.8-2.7 2.5-4Z',
+    verified: 'm5 12 4 4L19 6m-7-4 2 2 3-.2.8 3 2.2 2-2.2 2 .2 3-3 .8-2 2-2-2-3 .2-.8-3-2-2Z',
+  }
+  return <span className={`glass-icon glass-icon-${name}`}><svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name]} /></svg></span>
+}
+
+function ScoreRing({ value }) {
+  return <div className="feature-score" style={{ '--score': `${value * 3.6}deg` }}><strong>{value}<small>%</small></strong></div>
+}
+
 function App() {
   const [view, setView] = useState('home')
   const [profile, setProfile] = useState(blankProfile)
@@ -333,31 +455,35 @@ function App() {
       <div className={`api-status ${health.status === 'ok' ? 'online' : ''}`}><span className="status-dot" />{health.loading ? 'Checking API' : health.status === 'ok' ? 'API live · Runtime profiles' : 'API offline'}</div>
     </nav>
 
-    {view === 'home' && <section className="home wrap">
-      <div className="hero-copy">
-        <p className="eyebrow"><span className="live-dot" />TEAM FORMATION, REIMAGINED</p>
-        <h1>Build the team<br /><em>your idea needs.</em></h1>
-        <p className="hero-description">Discover collaborators who fill your gaps—not people who mirror your résumé. SkillBridge makes complementary skills visible in minutes.</p>
-        <div className="hero-actions">
-          <button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button>
-          <button className="button secondary" onClick={() => setView('profile')}>Create your profile</button>
+    {view === 'home' && <>
+      <section className="home wrap home-hero">
+        <ParticleField />
+        <div className="hero-copy reveal">
+          <p className="eyebrow"><span className="live-dot" />TEAM FORMATION, REIMAGINED</p>
+          <h1>Build the team<br /><em>your idea needs.</em></h1>
+          <p className="hero-description">Discover collaborators who fill your gaps—not people who mirror your résumé. SkillBridge makes complementary skills visible in minutes.</p>
+          <div className="hero-actions"><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button><button className="button secondary" onClick={() => setView('profile')}>Create your profile</button></div>
+          <p className="demo-note"><Icon name="spark" size={16} />Runtime profiles · Project generator uses a clearly labelled demo / fallback mode</p>
         </div>
-        <p className="demo-note"><Icon name="spark" size={16} />Runtime profiles · Project generator uses a clearly labelled demo / fallback mode</p>
-      </div>
-      <div className="hero-panel">
-        <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-        <div className="connection c-one" /><div className="connection c-two" /><div className="connection c-three" />
-        <div className="person-card card-main"><span className="avatar avatar-you">+</span><div><strong>Your profile</strong><small>Skills you enter</small></div></div>
-        <div className="person-card card-design"><span className="avatar avatar-design">+</span><div><strong>Design profile</strong><small>Runtime candidate</small></div><span className="fit-pill">Live input</span></div>
-        <div className="person-card card-iot"><span className="avatar avatar-iot">+</span><div><strong>Builder profile</strong><small>Runtime candidate</small></div><span className="fit-pill">Live input</span></div>
-        <div className="panel-caption"><Icon name="spark" size={17} />Complementary strengths, connected.</div>
-      </div>
-      <div className="steps">
-        <div><span>01</span><Icon name="compass" /><h3>Discover</h3><p>Show what you bring.</p></div>
-        <div><span>02</span><Icon name="users" /><h3>Match</h3><p>Find what you need.</p></div>
-        <div><span>03</span><Icon name="bolt" /><h3>Create</h3><p>Build something meaningful.</p></div>
-      </div>
-    </section>}
+        <div className="hero-panel reveal delay-one">
+          <div className="hero-glow" /><div className="orbit orbit-one" /><div className="orbit orbit-two" />
+          <div className="connection c-one"><i /></div><div className="connection c-two"><i /></div>
+          <div className="person-card card-main"><span className="avatar avatar-you"><GlassIcon name="verified" size={18} /></span><div><strong>Your profile</strong><small>Skills you enter</small></div><span className="node-status" /></div>
+          <div className="person-card card-design"><span className="avatar avatar-design"><GlassIcon name="design" size={18} /></span><div><strong>Design profile</strong><small>Runtime candidate</small></div><span className="fit-pill">Live input</span></div>
+          <div className="person-card card-iot"><span className="avatar avatar-iot"><GlassIcon name="code" size={18} /></span><div><strong>Builder profile</strong><small>Runtime candidate</small></div><span className="fit-pill">Live input</span></div>
+          <div className="panel-caption"><Icon name="spark" size={17} />Complementary strengths, connected.</div>
+        </div>
+        <div className="steps reveal delay-two">
+          <div><span>01</span><GlassIcon name="discover" /><h3>Discover</h3><p>Show what you bring.</p></div>
+          <div><span>02</span><GlassIcon name="match" /><h3>Match</h3><p>Find what you need.</p></div>
+          <div><span>03</span><GlassIcon name="create" /><h3>Create</h3><p>Build something meaningful.</p></div>
+        </div>
+      </section>
+      <section className="home-section wrap reveal"><div className="section-heading"><div><p className="eyebrow">SIGNALS FROM THE NETWORK</p><h2>Small teams. Bigger range.</h2></div><p>SkillBridge makes the missing capability visible before your project gets stuck.</p></div><div className="stats-grid"><div className="stat-card"><strong>65<span>%</span></strong><p>of every match is driven by complementary skill coverage.</p></div><div className="stat-card"><strong>3<span>×</span></strong><p>signals combine to find a more useful collaborator.</p></div><div className="stat-card"><strong>24<span>/7</span></strong><p>runtime profiles ready to become your next teammate.</p></div></div></section>
+      <section className="home-section wrap reveal"><div className="section-heading"><div><p className="eyebrow">FEATURED PROJECTS</p><h2>Ideas with room to grow.</h2></div><button className="button ghost" onClick={() => setView('profile')}>Build your team <Icon name="arrow" size={16} /></button></div><div className="project-grid"><article className="project-card"><div className="project-top"><span className="project-kicker"><GlassIcon name="startup" size={16} />Smart campus</span><ScoreRing value={92} /></div><h3>WasteLess Campus</h3><p>IoT signals, civic design, and a clear path to a cleaner campus.</p><div className="project-tags"><span>IoT</span><span>UI/UX</span><span>Research</span></div></article><article className="project-card project-purple"><div className="project-top"><span className="project-kicker"><GlassIcon name="research" size={16} />Accessibility</span><ScoreRing value={86} /></div><h3>OpenRoute</h3><p>Make everyday routes more legible, inclusive, and community-led.</p><div className="project-tags"><span>React</span><span>Research</span><span>Strategy</span></div></article><article className="project-card project-teal"><div className="project-top"><span className="project-kicker"><GlassIcon name="code" size={16} />Climate data</span><ScoreRing value={79} /></div><h3>CityPulse</h3><p>Turn local climate data into actions people can actually feel.</p><div className="project-tags"><span>Python</span><span>Cloud</span><span>Data</span></div></article></div></section>
+      <section className="home-section wrap category-section reveal"><div className="section-heading"><div><p className="eyebrow">SKILL CATEGORIES</p><h2>Find the missing shape.</h2></div><p>Teams become stronger when different disciplines have a seat at the table.</p></div><div className="category-grid"><div><GlassIcon name="design" /><strong>Design & experience</strong><span>UI/UX · Figma · Research</span></div><div><GlassIcon name="code" /><strong>Build & systems</strong><span>React · Python · Cloud</span></div><div><GlassIcon name="research" /><strong>Insight & strategy</strong><span>Product · Data · Speaking</span></div><div><GlassIcon name="startup" /><strong>Purpose & impact</strong><span>Sustainability · Education</span></div></div></section>
+      <section className="cta-band wrap reveal"><div><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h2>Don’t build alone by default.</h2><p>Bring your strengths. We’ll help reveal the people who make the idea possible.</p></div><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button></section>
+    </>}
 
     {view === 'profile' && <section className="page wrap narrow">
       <div className="page-heading"><p className="eyebrow">STEP 01 · YOUR PROFILE</p><h1>What do you bring to the table?</h1><p>Choose the skills and causes that make your best collaboration click.</p></div>
