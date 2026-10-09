@@ -343,6 +343,9 @@ function App() {
   const [isPublishing, setIsPublishing] = useState(false)
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [notice, setNotice] = useState('')
+  const [projects, setProjects] = useState([])
+  const [activeProject, setActiveProject] = useState(null)
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false)
 
   useEffect(() => {
     fetch(`${API}/health`)
@@ -350,6 +353,20 @@ function App() {
       .then(data => setHealth({ loading: false, status: data.status, source: data.matching_source }))
       .catch(() => setHealth({ loading: false, status: 'offline' }))
   }, [])
+
+  useEffect(() => {
+    if (view !== 'browse') return
+    setIsLoadingProjects(true)
+    fetch(`${API}/projects`)
+      .then(response => response.ok ? response.json() : Promise.reject(new Error('Projects are unavailable.')))
+      .then(data => setProjects(current => {
+        const serverProjects = data.projects || []
+        const localFallbacks = current.filter(project => project.source === 'demo / fallback' && !serverProjects.some(item => item.id === project.id))
+        return [...serverProjects, ...localFallbacks]
+      }))
+      .catch(() => setProjects([]))
+      .finally(() => setIsLoadingProjects(false))
+  }, [view])
 
   const updateSelection = (setValue, field, value) => {
     setValue(current => ({
@@ -489,6 +506,16 @@ function App() {
     setView(target)
   }
 
+  const handleProjectCreated = project => {
+    setActiveProject(project)
+    setProjects(current => [project, ...current.filter(item => item.id !== project.id)])
+  }
+
+  const openProject = project => {
+    setActiveProject(project)
+    setView('project')
+  }
+
   const clearProfiles = () => {
     setProfile(blankProfile())
     setCandidateDraft(blankProfile())
@@ -512,6 +539,7 @@ function App() {
         <button className={view === 'matches' ? 'selected' : ''} onClick={() => navTo('matches')}>Matches</button>
         <button className={view === 'team' ? 'selected' : ''} onClick={() => navTo('team')}>Team <span className="team-count">{team.length}</span></button>
         <button className={view === 'builder' ? 'selected' : ''} onClick={() => setView('builder')}>Team Builder</button>
+        <button className={view === 'browse' ? 'selected' : ''} onClick={() => setView('browse')}>Browse Projects</button>
       </div>
       <div className={`api-status ${health.status === 'ok' ? 'online' : ''}`}><span className="status-dot" />{health.loading ? 'Checking API' : health.status === 'ok' ? 'API live · Runtime profiles' : 'API offline'}</div>
     </nav>
@@ -545,7 +573,7 @@ function App() {
       <section className="cta-band wrap reveal"><div><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h2>Don’t build alone by default.</h2><p>Bring your strengths. We’ll help reveal the people who make the idea possible.</p></div><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button></section>
     </>}
 
-    {view === 'builder' && <TeamBuilder profile={profile} team={team} onGoProfile={() => setView('profile')} />}
+    {view === 'builder' && <TeamBuilder profile={profile} team={team} onGoProfile={() => setView('profile')} onProjectCreated={handleProjectCreated} onGoProject={project => { setActiveProject(project); setView('project') }} />}
 
     {view === 'profile' && <section className="page wrap narrow">
       <div className="page-heading"><p className="eyebrow">STEP 01 · YOUR PROFILE</p><h1>What do you bring to the table?</h1><p>Choose the skills and causes that make your best collaboration click.</p></div>
@@ -616,22 +644,19 @@ function App() {
         {idea && <ProjectIdea idea={idea} />}
       </>}
     </section>}
+
+    {view === 'browse' && <BrowseProjects projects={projects} isLoading={isLoadingProjects} onOpen={openProject} onBuild={() => setView('builder')} />}
+    {view === 'project' && activeProject && <ProjectPage project={activeProject} onBrowse={() => setView('browse')} onBuilder={() => setView('builder')} />}
     <footer className="wrap"><span className="brand-mark mini"><Icon name="spark" size={13} /></span> SkillBridge · Build complementary teams, transparently.</footer>
     </main>
   </ClickSpark>
 }
 
-function TeamBuilder({ profile, team, onGoProfile }) {
-  const builderSteps = ['Project', 'Team', 'Gaps', 'Matches']
-  const demoProject = {
-    name: 'Campus Climate Companion',
-    description: 'A simple tool that helps students understand campus energy use and turn climate data into everyday actions.',
-    category: 'Sustainability',
-  }
+function TeamBuilder({ profile, team, onGoProfile, onProjectCreated, onGoProject }) {
+  const builderSteps = ['Project', 'Team', 'Gaps', 'Matches', 'Launch']
+  const demoProject = { name: 'Campus Climate Companion', description: 'A simple tool that helps students understand campus energy use and turn climate data into everyday actions.', category: 'Sustainability' }
   const demoOwner = { id: 'demo-owner', name: 'You', skills: ['React', 'Python'] }
-  const demoAccepted = [
-    { id: 'demo-lee', name: 'Lee', skills: ['Research', 'Product Strategy'] },
-  ]
+  const demoAccepted = [{ id: 'demo-lee', name: 'Lee', skills: ['Research', 'Product Strategy'] }]
   const suggestions = {
     'UI/UX': [{ name: 'Maya Chen', skills: 'UI/UX · Figma · Research', score: 94, why: 'Strong visual thinking and research experience for a student-facing product.' }],
     Cloud: [{ name: 'Arjun Mehta', skills: 'Cloud · React · Data Analysis', score: 89, why: 'Can turn your prototype into a reliable, measurable pilot.' }],
@@ -647,12 +672,16 @@ function TeamBuilder({ profile, team, onGoProfile }) {
   const [outsideOpen, setOutsideOpen] = useState(false)
   const [demoMode, setDemoMode] = useState(false)
   const [activeRole, setActiveRole] = useState('')
+  const [invitedCandidates, setInvitedCandidates] = useState([])
   const [inviteStatus, setInviteStatus] = useState('')
+  const [launchChoice, setLaunchChoice] = useState('now')
+  const [isLaunching, setIsLaunching] = useState(false)
+  const [launchResult, setLaunchResult] = useState(null)
+  const [shareStatus, setShareStatus] = useState('')
 
   const owner = demoMode ? demoOwner : (profile?.name && profile.skills?.length ? { id: 'owner', name: profile.name, skills: profile.skills } : null)
   const acceptedMembers = demoMode ? demoAccepted : (team || []).map(member => ({ id: member.id, name: member.name, skills: member.skills || [] }))
   const members = [...(owner ? [owner] : []), ...acceptedMembers, ...outsideMembers]
-
   const inferRoles = (description, category) => {
     const text = `${description} ${category}`.toLowerCase()
     const detected = ['Product Strategy', 'UI/UX', 'Research']
@@ -661,63 +690,61 @@ function TeamBuilder({ profile, team, onGoProfile }) {
     if (text.includes('community') || text.includes('student') || text.includes('pitch')) detected.push('Public Speaking')
     return [...new Set(detected)].slice(0, 6)
   }
-
   const loadDemo = () => {
     const roles = inferRoles(demoProject.description, demoProject.category)
-    setProject(demoProject)
-    setNeededRoles(roles)
-    setDemoMode(true)
-    setOutsideMembers([])
-    setActiveRole(roles.find(role => ![...demoOwner.skills, ...demoAccepted.flatMap(member => member.skills)].includes(role)) || roles[0])
-    setInviteStatus('')
-    setStep(3)
+    setProject(demoProject); setNeededRoles(roles); setDemoMode(true); setOutsideMembers([]); setInvitedCandidates([]); setLaunchResult(null)
+    setActiveRole(roles.find(role => ![...demoOwner.skills, ...demoAccepted.flatMap(member => member.skills)].includes(role)) || roles[0]); setInviteStatus(''); setStep(3)
   }
-
   const continueProject = () => {
     if (project.name.trim().length < 3 || project.description.trim().length < 12) return
-    setDemoMode(false)
-    setNeededRoles(inferRoles(project.description, project.category))
-    setStep(1)
+    setDemoMode(false); setNeededRoles(inferRoles(project.description, project.category)); setStep(1)
   }
-
   const addOutsideMember = () => {
     if (outsideDraft.name.trim().length < 2 || outsideDraft.skills.length === 0) return
     setOutsideMembers(current => [...current, { ...outsideDraft, name: outsideDraft.name.trim(), id: `outside-${Date.now()}` }])
-    setOutsideDraft({ name: '', skills: [] })
-    setOutsideOpen(false)
+    setOutsideDraft({ name: '', skills: [] }); setOutsideOpen(false)
   }
-
   const covered = neededRoles.filter(role => members.some(member => member.skills.includes(role)))
   const missing = neededRoles.filter(role => !covered.includes(role))
   const completeness = neededRoles.length ? Math.round((covered.length / neededRoles.length) * 100) : 0
   const toggleOutsideSkill = skill => setOutsideDraft(current => ({ ...current, skills: current.skills.includes(skill) ? current.skills.filter(item => item !== skill) : [...current.skills, skill] }))
+  const markInvite = candidate => { setInvitedCandidates(current => current.some(item => item.name === candidate.name) ? current : [...current, candidate]); setInviteStatus(`Invite active for ${candidate.name} · retained on launch`) }
+
+  const launchProject = async () => {
+    if (!owner || !project.name || !neededRoles.length) return
+    setIsLaunching(true); setInviteStatus('')
+    const payload = { ...project, status: launchChoice === 'draft' ? 'Draft' : 'Open', launch_mode: launchChoice, owner, members, open_roles: missing, invites_pending: invitedCandidates }
+    try {
+      const response = await fetch('/api/projects', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!response.ok) throw new Error('Project persistence is unavailable.')
+      const data = await response.json()
+      setLaunchResult({ ...data.project, source: 'database' }); onProjectCreated(data.project); setStep(5)
+    } catch (error) {
+      const fallback = { ...payload, id: `demo-project-${Date.now()}`, created_at: new Date().toISOString(), milestones: [{ id: 'first-brief', label: 'Share the project brief', done: false }, { id: 'first-build', label: 'Define the first build milestone', done: false }, { id: 'first-checkin', label: 'Schedule a team check-in', done: false }], source: 'demo / fallback' }
+      setLaunchResult(fallback); onProjectCreated(fallback); setStep(5)
+    } finally { setIsLaunching(false) }
+  }
+
+  if (step === 5 && launchResult) return <section className="page wrap launch-success-page"><div className="launch-confetti" aria-hidden="true"><i /><i /><i /><i /><i /><i /></div><div className="success-check"><Icon name="check" size={34} /></div><p className="eyebrow">PROJECT {launchResult.status.toUpperCase()} · {launchResult.source === 'database' ? 'SAVED TO DATABASE' : 'DEMO / FALLBACK'}</p><h1>From idea to a <em>live project</em> with a team in under a minute.</h1><p className="success-lede">{launchResult.name} is ready for the next step. Your team, open roles, and active invites are all carried forward.</p><div className="success-actions"><button className="button primary" onClick={() => onGoProject(launchResult)}>Go to project <Icon name="arrow" size={18} /></button><button className="button secondary" onClick={() => { const url = `${window.location.origin}/projects/${launchResult.id}`; navigator.clipboard?.writeText(url); setShareStatus('Project link copied') }}>{shareStatus || 'Share'} <Icon name="spark" size={17} /></button></div><div className="next-steps"><p className="eyebrow">NEXT STEPS</p><label><span>01</span><input type="checkbox" /> Share the brief with your team</label><label><span>02</span><input type="checkbox" /> Fill the open roles</label><label><span>03</span><input type="checkbox" /> Set your first milestone</label></div><button className="button ghost" onClick={() => setStep(4)}>Back to launch review</button></section>
 
   return <section className="page wrap builder-page">
-    <div className="builder-heading page-heading"><p className="eyebrow"><Icon name="users" size={14} /> TEAM BUILDER · PROFILE-BASED</p><h1>See the missing shape in your team.</h1><p>Project owners and accepted teammates are added automatically from their profiles. Add someone outside the platform only when needed.</p></div>
+    <div className="builder-heading page-heading"><p className="eyebrow"><Icon name="users" size={14} /> TEAM BUILDER · {step === 4 ? 'READY TO LAUNCH' : 'PROFILE-BASED'}</p><h1>{step === 4 ? 'Give your team a place to start.' : 'See the missing shape in your team.'}</h1><p>{step === 4 ? 'Review the project, choose how to launch it, and make the next step visible.' : 'Project owners and accepted teammates are added automatically from their profiles. Add someone outside the platform only when needed.'}</p></div>
     <div className="builder-stepper" aria-label="Team Builder progress">{builderSteps.map((label, index) => <button key={label} type="button" className={`${step >= index ? 'done' : ''} ${step === index ? 'active' : ''}`} onClick={() => index <= step && setStep(index)}><span>{index + 1}</span>{label}</button>)}</div>
-
-    {step === 0 && <div className="builder-card builder-project-card">
-      <div className="builder-card-heading"><div><p className="eyebrow">01 · PROJECT</p><h2>Create or open a project</h2><p>Describe the idea and we’ll turn it into a starting role plan. You become the owner automatically.</p></div><span className="demo-badge">60-SEC DEMO</span></div>
-      <div className="builder-form-grid"><label>Project name<input value={project.name} onChange={event => setProject({ ...project, name: event.target.value })} placeholder="e.g. Campus Climate Companion" /></label><label>Category<select value={project.category} onChange={event => setProject({ ...project, category: event.target.value })}>{['Sustainability', 'Education', 'Health', 'Community', 'Technology'].map(option => <option key={option}>{option}</option>)}</select></label></div>
-      <label className="builder-description">Description<textarea value={project.description} onChange={event => setProject({ ...project, description: event.target.value })} placeholder="What will it help people do?" rows="4" /></label>
-      <div className="builder-actions"><button className="button secondary" onClick={loadDemo}><Icon name="bolt" size={17} />Use 60-second demo</button><button className="button primary" onClick={continueProject} disabled={project.name.trim().length < 3 || project.description.trim().length < 12}>Continue to team <Icon name="arrow" size={18} /></button></div>
-      <p className="fallback-note"><Icon name="spark" size={14} />Role suggestions use a labelled local demo/fallback when the AI project generator is unavailable.</p>
-    </div>}
-
-    {step === 1 && <div className="builder-card">
-      <div className="builder-card-heading"><div><p className="eyebrow">02 · TEAM</p><h2>Your team is automatic</h2><p>The owner and accepted platform teammates come from their profiles. You don’t retype them here.</p></div><span className="project-pill">{project.name || demoProject.name}</span></div>
-      {members.length > 0 ? <div className="builder-member-list auto-member-list">{members.map(member => <div className="builder-member" key={member.id}><span className={`avatar ${member.id.startsWith('outside-') ? 'avatar-outsider' : ''}`}>{initials(member.name)}</span><div><strong>{member.name} {member.id === 'owner' || member.id === 'demo-owner' ? <small className="owner-tag">OWNER</small> : member.id.startsWith('outside-') ? <small className="outside-tag">NOT ON SKILLBRIDGE</small> : <small className="accepted-tag">ACCEPTED</small>}</strong><small>{member.skills.join(' · ')}</small></div>{member.id.startsWith('outside-') && <button className="remove" onClick={() => setOutsideMembers(current => current.filter(item => item.id !== member.id))} aria-label={`Remove ${member.name}`}><Icon name="x" size={17} /></button>}</div>)}</div> : <div className="builder-empty"><span className="empty-icon"><Icon name="users" size={24} /></span><strong>Create your profile first</strong><p>Your profile becomes the first team member and supplies the owner skills.</p><button className="button secondary" onClick={onGoProfile}>Create profile <Icon name="arrow" size={16} /></button></div>}
-      <div className="outside-option"><div><p className="eyebrow">SMALL EXCEPTION</p><strong>Not on SkillBridge</strong><p>Add a real-world collaborator who hasn’t signed up yet. They won’t be treated as a platform profile.</p></div><button className="button ghost compact" onClick={() => setOutsideOpen(current => !current)}>{outsideOpen ? 'Close' : 'Add someone'} <Icon name="plus" size={15} /></button></div>
-      {outsideOpen && <div className="outside-form"><label>Name<input value={outsideDraft.name} onChange={event => setOutsideDraft({ ...outsideDraft, name: event.target.value })} placeholder="External collaborator" /></label><fieldset><legend>Known skills</legend><div className="chip-grid">{skills.map(skill => <Chip key={skill} small active={outsideDraft.skills.includes(skill)} onClick={() => toggleOutsideSkill(skill)}>{skill}</Chip>)}</div></fieldset><button className="button secondary" onClick={addOutsideMember}><Icon name="plus" size={16} />Add outside member</button></div>}
-      <div className="builder-actions"><button className="button ghost" onClick={() => setStep(0)}>Back</button><button className="button primary" onClick={() => setStep(2)} disabled={members.length === 0}>Run gap analysis <Icon name="arrow" size={18} /></button></div>
-    </div>}
-
-    {step >= 2 && <>
-      <div className="builder-summary"><div><p className="eyebrow">PROJECT SCOPE · {project.category.toUpperCase()}</p><h2>{project.name}</h2><p>{project.description}</p><div className="builder-header-members">{members.slice(0, 5).map(member => <span key={member.id} title={`${member.name} · ${member.skills.join(', ')}`}>{initials(member.name)}</span>)}{members.length > 5 && <span>+{members.length - 5}</span>}</div><span className={`demo-badge ${demoMode ? '' : 'live-badge'}`}>{demoMode ? 'DEMO / FALLBACK DATA · EDITABLE' : 'LIVE PROFILE ROSTER'}</span></div><div className="completeness-ring" style={{ '--score': `${completeness * 3.6}deg` }}><strong>{completeness}%</strong><small>covered</small></div></div>
-      <div className="builder-gap-grid"><section className="builder-card gap-card"><div className="builder-card-heading"><div><p className="eyebrow">03 · GAP ANALYSIS</p><h2>What is covered?</h2></div><span className="coverage-count">{covered.length}/{neededRoles.length} roles</span></div><div className="role-list">{covered.map((role, index) => <div className="role-row covered-role" style={{ '--i': index }} key={role}><span className="role-dot"><Icon name="check" size={14} /></span><strong>{role}</strong><span>Covered by team profiles</span></div>)}{missing.map((role, index) => <div className="role-row missing-role" style={{ '--i': index + covered.length }} key={role}><span className="role-dot">+</span><strong>{role}</strong><button className="button compact primary" onClick={() => { setActiveRole(role); setStep(3) }}>Find someone <Icon name="arrow" size={14} /></button></div>)}</div>{missing.length === 0 && <p className="success-copy"><Icon name="check" size={17} />Every suggested role is covered. You’re ready to build.</p>}</section><section className="builder-card builder-next-card"><p className="eyebrow">PROJECT TEAM</p><h2>{members.length} {members.length === 1 ? 'member' : 'members'}</h2><div className="builder-mini-roster">{members.map(member => <span key={member.id} title={member.name}>{initials(member.name)}</span>)}</div><p>Owner and accepted profiles update this ring automatically. Outside collaborators are clearly marked.</p><button className="button secondary full" onClick={() => setStep(1)}>View team roster</button></section></div>
-      {step >= 3 && <section className="builder-matches"><div className="builder-card-heading"><div><p className="eyebrow">04 · MATCHES</p><h2>People who can close the gap.</h2><p>Suggestions are demo profiles until live platform profiles are connected.</p></div><button className="button ghost" onClick={() => setStep(2)}>Back to gaps</button></div><div className="builder-match-grid">{missing.length ? missing.map(role => (suggestions[role] || suggestions.default).map(candidate => <article className={`builder-match-card ${activeRole === role ? 'highlighted' : ''}`} key={`${role}-${candidate.name}`}><div className="match-role"><span className="role-dot">+</span><strong>{role}</strong><span>{candidate.score}% fit</span></div><div className="candidate"><span className="avatar avatar-design">{initials(candidate.name)}</span><div><h2>{candidate.name}</h2><p>{candidate.skills}</p></div></div><div className="why"><span><Icon name="spark" size={16} /></span><p>{candidate.why}</p></div><button className="button secondary full" onClick={() => setInviteStatus(`Invite ready for ${candidate.name} · demo only`)}>{inviteStatus.includes(candidate.name) ? <><Icon name="check" size={17} />Invite ready</> : <>Send invite <Icon name="arrow" size={17} /></>}</button></article>)) : <div className="builder-empty"><span className="empty-icon"><Icon name="check" size={24} /></span><strong>No gaps to fill</strong><p>Your team already covers every role in this project.</p></div>}</div>{inviteStatus && <p className="notice"><Icon name="check" size={16} />{inviteStatus}</p>}</section>}
+    {step === 0 && <div className="builder-card builder-project-card"><div className="builder-card-heading"><div><p className="eyebrow">01 · PROJECT</p><h2>Create or open a project</h2><p>Describe the idea and we’ll turn it into a starting role plan. You become the owner automatically.</p></div><span className="demo-badge">60-SEC DEMO</span></div><div className="builder-form-grid"><label>Project name<input value={project.name} onChange={event => setProject({ ...project, name: event.target.value })} placeholder="e.g. Campus Climate Companion" /></label><label>Category<select value={project.category} onChange={event => setProject({ ...project, category: event.target.value })}>{['Sustainability', 'Education', 'Health', 'Community', 'Technology'].map(option => <option key={option}>{option}</option>)}</select></label></div><label className="builder-description">Description<textarea value={project.description} onChange={event => setProject({ ...project, description: event.target.value })} placeholder="What will it help people do?" rows="4" /></label><div className="builder-actions"><button className="button secondary" onClick={loadDemo}><Icon name="bolt" size={17} />Use 60-second demo</button><button className="button primary" onClick={continueProject} disabled={project.name.trim().length < 3 || project.description.trim().length < 12}>Continue to team <Icon name="arrow" size={18} /></button></div><p className="fallback-note"><Icon name="spark" size={14} />Role suggestions use a labelled local demo/fallback when the AI project generator is unavailable.</p></div>}
+    {step === 1 && <div className="builder-card"><div className="builder-card-heading"><div><p className="eyebrow">02 · TEAM</p><h2>Your team is automatic</h2><p>The owner and accepted platform teammates come from their profiles. You don’t retype them here.</p></div><span className="project-pill">{project.name || demoProject.name}</span></div>{members.length > 0 ? <div className="builder-member-list auto-member-list">{members.map(member => <div className="builder-member" key={member.id}><span className={`avatar ${member.id.startsWith('outside-') ? 'avatar-outsider' : ''}`}>{initials(member.name)}</span><div><strong>{member.name} {member.id === 'owner' || member.id === 'demo-owner' ? <small className="owner-tag">OWNER</small> : member.id.startsWith('outside-') ? <small className="outside-tag">NOT ON SKILLBRIDGE</small> : <small className="accepted-tag">ACCEPTED</small>}</strong><small>{member.skills.join(' · ')}</small></div>{member.id.startsWith('outside-') && <button className="remove" onClick={() => setOutsideMembers(current => current.filter(item => item.id !== member.id))} aria-label={`Remove ${member.name}`}><Icon name="x" size={17} /></button>}</div>)}</div> : <div className="builder-empty"><span className="empty-icon"><Icon name="users" size={24} /></span><strong>Create your profile first</strong><p>Your profile becomes the first team member and supplies the owner skills.</p><button className="button secondary" onClick={onGoProfile}>Create profile <Icon name="arrow" size={16} /></button></div>}<div className="outside-option"><div><p className="eyebrow">SMALL EXCEPTION</p><strong>Not on SkillBridge</strong><p>Add a real-world collaborator who hasn’t signed up yet. They won’t be treated as a platform profile.</p></div><button className="button ghost compact" onClick={() => setOutsideOpen(current => !current)}>{outsideOpen ? 'Close' : 'Add someone'} <Icon name="plus" size={15} /></button></div>{outsideOpen && <div className="outside-form"><label>Name<input value={outsideDraft.name} onChange={event => setOutsideDraft({ ...outsideDraft, name: event.target.value })} placeholder="External collaborator" /></label><fieldset><legend>Known skills</legend><div className="chip-grid">{skills.map(skill => <Chip key={skill} small active={outsideDraft.skills.includes(skill)} onClick={() => toggleOutsideSkill(skill)}>{skill}</Chip>)}</div></fieldset><button className="button secondary" onClick={addOutsideMember}><Icon name="plus" size={16} />Add outside member</button></div>}<div className="builder-actions"><button className="button ghost" onClick={() => setStep(0)}>Back</button><button className="button primary" onClick={() => setStep(2)} disabled={members.length === 0}>Run gap analysis <Icon name="arrow" size={18} /></button></div></div>}
+    {step >= 2 && <><div className="builder-summary"><div><p className="eyebrow">PROJECT SCOPE · {project.category.toUpperCase()}</p><h2>{project.name}</h2><p>{project.description}</p><div className="builder-header-members">{members.slice(0, 5).map(member => <span key={member.id} title={`${member.name} · ${member.skills.join(', ')}`}>{initials(member.name)}</span>)}{members.length > 5 && <span>+{members.length - 5}</span>}</div><span className={`demo-badge ${demoMode ? '' : 'live-badge'}`}>{demoMode ? 'DEMO / FALLBACK DATA · EDITABLE' : 'LIVE PROFILE ROSTER'}</span></div><div className="completeness-ring" style={{ '--score': `${completeness * 3.6}deg` }}><strong>{completeness}%</strong><small>covered</small></div></div><div className="builder-gap-grid"><section className="builder-card gap-card"><div className="builder-card-heading"><div><p className="eyebrow">03 · GAP ANALYSIS</p><h2>What is covered?</h2></div><span className="coverage-count">{covered.length}/{neededRoles.length} roles</span></div><div className="role-list">{covered.map((role, index) => <div className="role-row covered-role" style={{ '--i': index }} key={role}><span className="role-dot"><Icon name="check" size={14} /></span><strong>{role}</strong><span>Covered by team profiles</span></div>)}{missing.map((role, index) => <div className="role-row missing-role" style={{ '--i': index + covered.length }} key={role}><span className="role-dot">+</span><strong>{role}</strong><button className="button compact primary" onClick={() => { setActiveRole(role); setStep(3) }}>Find someone <Icon name="arrow" size={14} /></button></div>)}</div>{missing.length === 0 && <p className="success-copy"><Icon name="check" size={17} />Every suggested role is covered. You’re ready to build.</p>}</section><section className="builder-card builder-next-card"><p className="eyebrow">PROJECT TEAM</p><h2>{members.length} {members.length === 1 ? 'member' : 'members'}</h2><div className="builder-mini-roster">{members.map(member => <span key={member.id} title={member.name}>{initials(member.name)}</span>)}</div><p>Owner and accepted profiles update this ring automatically. Outside collaborators are clearly marked.</p><button className="button secondary full" onClick={() => setStep(1)}>View team roster</button></section></div>
+    {step >= 3 && <section className="builder-matches"><div className="builder-card-heading"><div><p className="eyebrow">04 · MATCHES</p><h2>People who can close the gap.</h2><p>Suggestions are demo profiles until live platform profiles are connected.</p></div><button className="button ghost" onClick={() => setStep(4)}>Continue to launch <Icon name="arrow" size={16} /></button></div><div className="builder-match-grid">{missing.length ? missing.map(role => (suggestions[role] || suggestions.default).map(candidate => <article className={`builder-match-card ${activeRole === role ? 'highlighted' : ''}`} key={`${role}-${candidate.name}`}><div className="match-role"><span className="role-dot">+</span><strong>{role}</strong><span>{candidate.score}% fit</span></div><div className="candidate"><span className="avatar avatar-design">{initials(candidate.name)}</span><div><h2>{candidate.name}</h2><p>{candidate.skills}</p></div></div><div className="why"><span><Icon name="spark" size={16} /></span><p>{candidate.why}</p></div><button className={`button ${invitedCandidates.some(item => item.name === candidate.name) ? 'added' : 'secondary'} full`} onClick={() => markInvite(candidate)}>{invitedCandidates.some(item => item.name === candidate.name) ? <><Icon name="check" size={17} />Invite active</> : <>Send invite <Icon name="arrow" size={17} /></>}</button></article>)) : <div className="builder-empty"><span className="empty-icon"><Icon name="check" size={24} /></span><strong>No gaps to fill</strong><p>Your team already covers every role in this project.</p></div>}</div>{inviteStatus && <p className="notice"><Icon name="check" size={16} />{inviteStatus}</p>}</section>}
+    {step === 4 && <section className="launch-review"><div className="launch-review-grid"><div className="builder-card"><p className="eyebrow">05 · LAUNCH REVIEW</p><h2>{project.name}</h2><p className="review-description">{project.description}</p><div className="review-meta"><span>{project.category}</span><span>{members.length} team members</span><span>{missing.length} open roles</span></div><div className="review-team"><p className="eyebrow">CURRENT TEAM</p>{members.map(member => <div className="review-member" key={member.id}><span className="avatar">{initials(member.name)}</span><div><strong>{member.name}</strong><small>{member.skills.join(' · ')}</small></div></div>)}</div></div><div className="builder-card launch-readiness-card"><p className="eyebrow">COMPLETENESS</p><div className="completeness-ring large-ring" style={{ '--score': `${completeness * 3.6}deg` }}><strong>{completeness}%</strong><small>covered</small></div><p>{missing.length ? `${missing.length} open role${missing.length === 1 ? '' : 's'} will be visible on Browse Projects.` : 'Your current team covers every suggested role.'}</p><div className="launch-open-roles">{missing.map(role => <span key={role}>{role}</span>)}</div></div></div><div className="launch-choice-card"><div><p className="eyebrow">CHOOSE A LAUNCH MODE</p><h2>How should this project open?</h2></div><div className="launch-choice-grid"><label className={launchChoice === 'now' ? 'selected' : ''}><input type="radio" checked={launchChoice === 'now'} onChange={() => setLaunchChoice('now')} /><strong>Launch now</strong><small>Open the project and show open roles immediately.</small></label><label className={launchChoice === 'invites_pending' ? 'selected' : ''}><input type="radio" checked={launchChoice === 'invites_pending'} onChange={() => setLaunchChoice('invites_pending')} /><strong>Launch with invites pending</strong><small>Keep sent invites active while the project is Open.</small></label><label className={launchChoice === 'draft' ? 'selected' : ''}><input type="radio" checked={launchChoice === 'draft'} onChange={() => setLaunchChoice('draft')} /><strong>Save as draft</strong><small>Save the review privately and launch later.</small></label></div><div className="builder-actions"><button className="button ghost" onClick={() => setStep(3)}>Back to matches</button><button className="button primary launch-button" onClick={launchProject} disabled={isLaunching || !owner}>{isLaunching ? 'Launching…' : launchChoice === 'draft' ? 'Save draft' : 'Launch project'} <Icon name="arrow" size={18} /></button></div>{!owner && <p className="fallback-note"><Icon name="users" size={14} />Create a profile first so the project has an owner and first team member.</p>}</div></section>}
     </>}
   </section>
+}
+
+function BrowseProjects({ projects, isLoading, onOpen, onBuild }) {
+  return <section className="page wrap browse-projects-page"><div className="page-heading"><p className="eyebrow">PROJECT NETWORK</p><h1>Browse projects with room to grow.</h1><p>See where complementary skills can turn an open role into momentum.</p></div><div className="browse-heading"><span className="project-count">{projects.length} saved project{projects.length === 1 ? '' : 's'}</span><button className="button primary" onClick={onBuild}><Icon name="plus" size={17} />Create project</button></div>{isLoading && <div className="builder-empty"><span className="empty-icon"><Icon name="activity" size={24} /></span><strong>Loading projects…</strong><p>Checking the project database.</p></div>}{!isLoading && projects.length === 0 && <div className="builder-empty browse-empty"><span className="empty-icon"><Icon name="compass" size={24} /></span><strong>No launched projects yet</strong><p>Use Team Builder to turn the next idea into a project people can join.</p><button className="button secondary" onClick={onBuild}>Open Team Builder <Icon name="arrow" size={16} /></button></div>}{!isLoading && projects.length > 0 && <div className="browse-project-grid">{projects.map(project => <article className="browse-project-card" key={project.id} onClick={() => onOpen(project)}><div className="browse-card-top"><span className="project-category">{project.category}</span><span className={`project-status ${project.status.toLowerCase()}`}>{project.status}</span></div><h2>{project.name}</h2><p>{project.description}</p><div className="browse-avatars">{project.members.slice(0, 4).map(member => <span key={member.id}>{initials(member.name)}</span>)}</div><div className="browse-card-bottom"><span>{project.members.length} team {project.members.length === 1 ? 'member' : 'members'}</span><span className="open-role-count">{project.open_roles.length} open {project.open_roles.length === 1 ? 'role' : 'roles'}</span></div></article>)}</div>}</section>
+}
+
+function ProjectPage({ project, onBrowse, onBuilder }) {
+  return <section className="page wrap project-page"><button className="button ghost project-back" onClick={onBrowse}>← Browse Projects</button><div className="project-page-hero"><div><p className="eyebrow">{project.category.toUpperCase()} · PROJECT PAGE</p><h1>{project.name}</h1><p>{project.description}</p><div className="project-page-status"><span className={`project-status ${project.status.toLowerCase()}`}>{project.status}</span>{project.launch_mode === 'invites_pending' && <span className="pending-pill">Invites pending</span>}<span>{project.members.length} members</span></div></div><div className="project-page-ring"><div className="completeness-ring" style={{ '--score': `${project.open_roles.length ? Math.max(18, Math.round((1 - project.open_roles.length / Math.max(project.members.length + project.open_roles.length, 1)) * 360)) : 360}deg` }}><strong>{project.open_roles.length ? 'Open' : 'Ready'}</strong><small>team state</small></div></div></div><div className="project-detail-grid"><section className="builder-card"><div className="builder-card-heading"><div><p className="eyebrow">TEAM</p><h2>People building it</h2></div><span className="coverage-count">{project.members.length} members</span></div><div className="project-team-list">{project.members.map(member => <div className="review-member" key={member.id}><span className="avatar">{initials(member.name)}</span><div><strong>{member.name}{member.id === project.owner?.id || member.name === project.owner?.name ? <small className="owner-tag">OWNER</small> : ''}</strong><small>{member.skills.join(' · ')}</small></div></div>)}</div>{project.invites_pending?.length > 0 && <div className="pending-invites"><p className="eyebrow">ACTIVE INVITES</p>{project.invites_pending.map(invite => <span key={invite.name}><Icon name="activity" size={14} />{invite.name} · pending</span>)}</div>}</section><section className="builder-card open-role-panel"><p className="eyebrow">OPEN POSITIONS</p><h2>{project.open_roles.length ? 'Find the missing shape' : 'No open roles yet'}</h2>{project.open_roles.length ? <div className="launch-open-roles">{project.open_roles.map(role => <span key={role}>{role}</span>)}</div> : <p className="success-copy"><Icon name="check" size={17} />This team covers the current role plan.</p>}<button className="button secondary full" onClick={onBuilder}>Build another project</button></section></div><section className="builder-card milestone-panel"><div className="builder-card-heading"><div><p className="eyebrow">MILESTONES</p><h2>Keep the first week visible.</h2></div><span className="demo-badge">SIMPLE PLAN</span></div><div className="milestone-list">{project.milestones.map((milestone, index) => <div className="milestone-row" key={milestone.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{milestone.label}</strong><small>{milestone.done ? 'Complete' : 'Next step'}</small></div>)}</div></section></section>
 }
 
 function MemberCard({ member, owner, remove }) {
