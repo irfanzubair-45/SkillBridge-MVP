@@ -504,6 +504,7 @@ function App() {
 
   return <ClickSpark>
     <main>
+    <ParticleField />
     <nav className="nav wrap">
       <button className="brand" onClick={() => setView('home')} aria-label="SkillBridge home"><span className="brand-mark"><Icon name="spark" size={18} /></span>SkillBridge</button>
       <div className="nav-links">
@@ -516,7 +517,6 @@ function App() {
 
     {view === 'home' && <>
       <section className="home wrap home-hero">
-        <ParticleField />
         <div className="hero-copy reveal">
           <p className="eyebrow"><span className="live-dot" />TEAM FORMATION, REIMAGINED</p>
           <h1>Build the team<br /><em>your idea needs.</em></h1>

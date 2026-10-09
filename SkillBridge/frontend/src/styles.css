@@ -92,3 +92,12 @@ footer { position: relative; color: var(--body); border-top-color: rgba(211,224,
 @media (max-width: 880px) { .home-hero { min-height: auto; padding-top: 56px; }.stats-grid, .project-grid { grid-template-columns: 1fr 1fr; }.project-card:last-child { grid-column: 1 / -1; }.category-grid { grid-template-columns: repeat(2,1fr); }.cta-band { margin-top: 60px; } }
 @media (max-width: 560px) { .nav { height: 68px; }.home-hero { padding-top: 38px; }.hero-copy h1 { font-size: clamp(42px, 13vw, 62px); letter-spacing: -3px; }.hero-panel { min-height: 350px; }.card-design { left: 10px; }.card-iot { right: 10px; }.person-card { min-width: 158px; }.stats-grid, .project-grid, .category-grid { grid-template-columns: 1fr; }.project-card:last-child { grid-column: auto; }.section-heading, .cta-band { align-items: start; flex-direction: column; }.section-heading > p { max-width: 100%; }.home-section { padding-top: 58px; }.cta-band { padding: 27px 23px; margin-bottom: 33px; }.cta-band .button { width: 100%; }.category-grid > div { min-height: 135px; }.steps div { padding-left: 47px; }.steps .glass-icon { left: 12px; }.steps span { left: 12px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .001ms !important; }.particle-field { display: none; } }
+
+/* Full-page Aurora Mesh backdrop: the UI stays in the foreground on every view. */
+main { position: relative; isolation: isolate; min-height: 100vh; }
+main > .particle-field { position: fixed; inset: 0; z-index: 0; width: 100vw; height: 100vh; pointer-events: none; opacity: .82; }
+main > nav, main > section, main > footer { position: relative; z-index: 1; }
+main > .particle-field + nav { position: sticky; }
+.page { position: relative; }
+.form-card, .panel, .match-card, .idea-card, .empty, .algorithm-banner, .candidate-section, .publish-section, .generator { backdrop-filter: blur(18px); }
+@media (prefers-reduced-motion: reduce) { main > .particle-field { display: block; opacity: .3; } }
