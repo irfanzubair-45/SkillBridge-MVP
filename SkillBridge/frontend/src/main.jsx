@@ -511,6 +511,7 @@ function App() {
         <button className={view === 'profile' ? 'selected' : ''} onClick={() => navTo('profile')}>Profile</button>
         <button className={view === 'matches' ? 'selected' : ''} onClick={() => navTo('matches')}>Matches</button>
         <button className={view === 'team' ? 'selected' : ''} onClick={() => navTo('team')}>Team <span className="team-count">{team.length}</span></button>
+        <button className={view === 'builder' ? 'selected' : ''} onClick={() => setView('builder')}>Team Builder</button>
       </div>
       <div className={`api-status ${health.status === 'ok' ? 'online' : ''}`}><span className="status-dot" />{health.loading ? 'Checking API' : health.status === 'ok' ? 'API live · Runtime profiles' : 'API offline'}</div>
     </nav>
@@ -521,7 +522,7 @@ function App() {
           <p className="eyebrow"><span className="live-dot" />TEAM FORMATION, REIMAGINED</p>
           <h1>Build the team<br /><em>your idea needs.</em></h1>
           <p className="hero-description">Discover collaborators who fill your gaps—not people who mirror your résumé. SkillBridge makes complementary skills visible in minutes.</p>
-          <div className="hero-actions"><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button><button className="button secondary" onClick={() => setView('profile')}>Create your profile</button></div>
+          <div className="hero-actions"><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button><button className="button secondary" onClick={() => setView('profile')}>Create your profile</button><button className="button ghost hero-builder-button" onClick={() => setView('builder')}><Icon name="users" size={17} />Team Builder</button></div>
           <p className="demo-note"><Icon name="spark" size={16} />Runtime profiles · Project generator uses a clearly labelled demo / fallback mode</p>
         </div>
         <div className="hero-panel reveal delay-one">
@@ -543,6 +544,8 @@ function App() {
       <section className="home-section wrap category-section reveal"><div className="section-heading"><div><p className="eyebrow">SKILL CATEGORIES</p><h2>Find the missing shape.</h2></div><p>Teams become stronger when different disciplines have a seat at the table.</p></div><div className="category-grid"><div><GlassIcon name="design" /><strong>Design & experience</strong><span>UI/UX · Figma · Research</span></div><div><GlassIcon name="code" /><strong>Build & systems</strong><span>React · Python · Cloud</span></div><div><GlassIcon name="research" /><strong>Insight & strategy</strong><span>Product · Data · Speaking</span></div><div><GlassIcon name="startup" /><strong>Purpose & impact</strong><span>Sustainability · Education</span></div></div></section>
       <section className="cta-band wrap reveal"><div><p className="eyebrow">YOUR NEXT COLLABORATION STARTS HERE</p><h2>Don’t build alone by default.</h2><p>Bring your strengths. We’ll help reveal the people who make the idea possible.</p></div><button className="button primary" onClick={() => setView('profile')}>Start matching <Icon name="arrow" size={18} /></button></section>
     </>}
+
+    {view === 'builder' && <TeamBuilder />}
 
     {view === 'profile' && <section className="page wrap narrow">
       <div className="page-heading"><p className="eyebrow">STEP 01 · YOUR PROFILE</p><h1>What do you bring to the table?</h1><p>Choose the skills and causes that make your best collaboration click.</p></div>
@@ -616,6 +619,96 @@ function App() {
     <footer className="wrap"><span className="brand-mark mini"><Icon name="spark" size={13} /></span> SkillBridge · Build complementary teams, transparently.</footer>
     </main>
   </ClickSpark>
+}
+
+function TeamBuilder() {
+  const builderSteps = ['Project', 'Team', 'Gaps', 'Matches']
+  const demoProject = {
+    name: 'Campus Climate Companion',
+    description: 'A simple tool that helps students understand campus energy use and turn climate data into everyday actions.',
+    category: 'Sustainability',
+  }
+  const demoMembers = [
+    { id: 'builder-you', name: 'You', skills: ['React', 'Python'] },
+    { id: 'builder-lee', name: 'Lee', skills: ['Research', 'Product Strategy'] },
+  ]
+  const suggestions = {
+    'UI/UX': [{ name: 'Maya Chen', skills: 'UI/UX · Figma · Research', score: 94, why: 'Strong visual thinking and research experience for a student-facing product.' }],
+    Cloud: [{ name: 'Arjun Mehta', skills: 'Cloud · React · Data Analysis', score: 89, why: 'Can turn your prototype into a reliable, measurable pilot.' }],
+    'Data Analysis': [{ name: 'Sana Kapoor', skills: 'Data Analysis · AI/ML · Research', score: 87, why: 'Connects climate signals to useful insights your users can act on.' }],
+    'Public Speaking': [{ name: 'Priya Shah', skills: 'Public Speaking · Product Strategy', score: 84, why: 'Makes complex ideas clear for partners, judges, and campus communities.' }],
+    default: [{ name: 'Noor Williams', skills: 'Design · Strategy · Research', score: 81, why: 'A complementary generalist who can help shape the next project step.' }],
+  }
+  const [step, setStep] = useState(0)
+  const [project, setProject] = useState({ name: '', description: '', category: 'Sustainability' })
+  const [neededRoles, setNeededRoles] = useState([])
+  const [members, setMembers] = useState([])
+  const [memberDraft, setMemberDraft] = useState({ name: '', skills: [] })
+  const [activeRole, setActiveRole] = useState('')
+  const [inviteStatus, setInviteStatus] = useState('')
+
+  const inferRoles = (description, category) => {
+    const text = `${description} ${category}`.toLowerCase()
+    const detected = ['Product Strategy', 'UI/UX', 'Research']
+    if (text.includes('data') || text.includes('climate') || text.includes('energy')) detected.push('Data Analysis')
+    if (text.includes('app') || text.includes('web') || text.includes('platform')) detected.push('Cloud')
+    if (text.includes('community') || text.includes('student') || text.includes('pitch')) detected.push('Public Speaking')
+    return [...new Set(detected)].slice(0, 6)
+  }
+
+  const loadDemo = () => {
+    const roles = inferRoles(demoProject.description, demoProject.category)
+    setProject(demoProject)
+    setNeededRoles(roles)
+    setMembers(demoMembers)
+    setActiveRole(roles.find(role => !demoMembers.flatMap(member => member.skills).includes(role)) || roles[0])
+    setInviteStatus('')
+    setStep(3)
+  }
+
+  const continueProject = () => {
+    if (project.name.trim().length < 3 || project.description.trim().length < 12) return
+    setNeededRoles(inferRoles(project.description, project.category))
+    setStep(1)
+  }
+
+  const addMember = () => {
+    if (memberDraft.name.trim().length < 2 || memberDraft.skills.length === 0) return
+    setMembers(current => [...current, { ...memberDraft, name: memberDraft.name.trim(), id: `builder-${Date.now()}` }])
+    setMemberDraft({ name: '', skills: [] })
+  }
+
+  const covered = neededRoles.filter(role => members.some(member => member.skills.includes(role)))
+  const missing = neededRoles.filter(role => !covered.includes(role))
+  const completeness = neededRoles.length ? Math.round((covered.length / neededRoles.length) * 100) : 0
+  const toggleDraftSkill = skill => setMemberDraft(current => ({ ...current, skills: current.skills.includes(skill) ? current.skills.filter(item => item !== skill) : [...current.skills, skill] }))
+
+  return <section className="page wrap builder-page">
+    <div className="builder-heading page-heading"><p className="eyebrow"><Icon name="users" size={14} /> TEAM BUILDER · DEMO READY</p><h1>See the missing shape in your team.</h1><p>Turn a project idea into a clear skills plan, then find the people who complete it.</p></div>
+    <div className="builder-stepper" aria-label="Team Builder progress">{builderSteps.map((label, index) => <button key={label} type="button" className={`${step >= index ? 'done' : ''} ${step === index ? 'active' : ''}`} onClick={() => index <= step && setStep(index)}><span>{index + 1}</span>{label}</button>)}</div>
+
+    {step === 0 && <div className="builder-card builder-project-card">
+      <div className="builder-card-heading"><div><p className="eyebrow">01 · PROJECT</p><h2>What are you building?</h2><p>We’ll turn the description into a starting role plan. You can edit it next.</p></div><span className="demo-badge">60-SEC DEMO</span></div>
+      <div className="builder-form-grid"><label>Project name<input value={project.name} onChange={event => setProject({ ...project, name: event.target.value })} placeholder="e.g. Campus Climate Companion" /></label><label>Category<select value={project.category} onChange={event => setProject({ ...project, category: event.target.value })}>{['Sustainability', 'Education', 'Health', 'Community', 'Technology'].map(option => <option key={option}>{option}</option>)}</select></label></div>
+      <label className="builder-description">Description<textarea value={project.description} onChange={event => setProject({ ...project, description: event.target.value })} placeholder="What will it help people do?" rows="4" /></label>
+      <div className="builder-actions"><button className="button secondary" onClick={loadDemo}><Icon name="bolt" size={17} />Use 60-second demo</button><button className="button primary" onClick={continueProject} disabled={project.name.trim().length < 3 || project.description.trim().length < 12}>Continue to team <Icon name="arrow" size={18} /></button></div>
+      <p className="fallback-note"><Icon name="spark" size={14} />Role suggestions use a labelled local demo/fallback when the AI project generator is unavailable.</p>
+    </div>}
+
+    {step === 1 && <div className="builder-card">
+      <div className="builder-card-heading"><div><p className="eyebrow">02 · TEAM</p><h2>Who is already in?</h2><p>Add the skills your current teammates bring. You can start with just yourself.</p></div><span className="project-pill">{project.name || demoProject.name}</span></div>
+      <div className="builder-member-form"><label>Member name<input value={memberDraft.name} onChange={event => setMemberDraft({ ...memberDraft, name: event.target.value })} placeholder="e.g. Alex" /></label><fieldset><legend>Skills</legend><div className="chip-grid">{skills.map(skill => <Chip key={skill} small active={memberDraft.skills.includes(skill)} onClick={() => toggleDraftSkill(skill)}>{skill}</Chip>)}</div></fieldset><button className="button secondary" onClick={addMember}><Icon name="plus" size={17} />Add member</button></div>
+      {members.length > 0 && <div className="builder-member-list">{members.map(member => <div className="builder-member" key={member.id}><span className="avatar">{initials(member.name)}</span><div><strong>{member.name}</strong><small>{member.skills.join(' · ')}</small></div><button className="remove" onClick={() => setMembers(current => current.filter(item => item.id !== member.id))} aria-label={`Remove ${member.name}`}><Icon name="x" size={17} /></button></div>)}</div>}
+      {members.length === 0 && <div className="builder-empty"><span className="empty-icon"><Icon name="users" size={24} /></span><strong>No teammates added yet</strong><p>Add yourself or use the demo for instant results.</p></div>}
+      <div className="builder-actions"><button className="button ghost" onClick={() => setStep(0)}>Back</button><button className="button primary" onClick={() => setStep(2)} disabled={members.length === 0}>Run gap analysis <Icon name="arrow" size={18} /></button></div>
+    </div>}
+
+    {step >= 2 && <>
+      <div className="builder-summary"><div><p className="eyebrow">PROJECT SCOPE · {project.category.toUpperCase()}</p><h2>{project.name}</h2><p>{project.description}</p><span className="demo-badge">DEMO / FALLBACK DATA · EDITABLE</span></div><div className="completeness-ring" style={{ '--score': `${completeness * 3.6}deg` }}><strong>{completeness}%</strong><small>covered</small></div></div>
+      <div className="builder-gap-grid"><section className="builder-card gap-card"><div className="builder-card-heading"><div><p className="eyebrow">03 · GAP ANALYSIS</p><h2>What is covered?</h2></div><span className="coverage-count">{covered.length}/{neededRoles.length} roles</span></div><div className="role-list">{covered.map((role, index) => <div className="role-row covered-role" style={{ '--i': index }} key={role}><span className="role-dot"><Icon name="check" size={14} /></span><strong>{role}</strong><span>Covered by your team</span></div>)}{missing.map((role, index) => <div className="role-row missing-role" style={{ '--i': index + covered.length }} key={role}><span className="role-dot">+</span><strong>{role}</strong><button className="button compact primary" onClick={() => { setActiveRole(role); setStep(3) }}>Find someone <Icon name="arrow" size={14} /></button></div>)}</div>{missing.length === 0 && <p className="success-copy"><Icon name="check" size={17} />Every suggested role is covered. You’re ready to build.</p>}</section><section className="builder-card builder-next-card"><p className="eyebrow">CURRENT TEAM</p><h2>{members.length} {members.length === 1 ? 'person' : 'people'} contributing</h2><div className="builder-mini-roster">{members.map(member => <span key={member.id}>{initials(member.name)}</span>)}</div><p>Your team currently covers {covered.length} of {neededRoles.length} suggested roles for this project.</p><button className="button secondary full" onClick={() => setStep(1)}>Edit team</button></section></div>
+      {step >= 3 && <section className="builder-matches"><div className="builder-card-heading"><div><p className="eyebrow">04 · MATCHES</p><h2>People who can close the gap.</h2><p>Suggestions are demo profiles until live platform profiles are connected.</p></div><button className="button ghost" onClick={() => setStep(2)}>Back to gaps</button></div><div className="builder-match-grid">{missing.length ? missing.map(role => (suggestions[role] || suggestions.default).map(candidate => <article className={`builder-match-card ${activeRole === role ? 'highlighted' : ''}`} key={`${role}-${candidate.name}`}><div className="match-role"><span className="role-dot">+</span><strong>{role}</strong><span>{candidate.score}% fit</span></div><div className="candidate"><span className="avatar avatar-design">{initials(candidate.name)}</span><div><h2>{candidate.name}</h2><p>{candidate.skills}</p></div></div><div className="why"><span><Icon name="spark" size={16} /></span><p>{candidate.why}</p></div><button className="button secondary full" onClick={() => setInviteStatus(`Invite ready for ${candidate.name} · demo only`)}>{inviteStatus.includes(candidate.name) ? <><Icon name="check" size={17} />Invite ready</> : <>Send invite <Icon name="arrow" size={17} /></>}</button></article>)) : <div className="builder-empty"><span className="empty-icon"><Icon name="check" size={24} /></span><strong>No gaps to fill</strong><p>Your team already covers every role in this demo project.</p></div>}</div>{inviteStatus && <p className="notice"><Icon name="check" size={16} />{inviteStatus}</p>}</section>}
+    </>}
+  </section>
 }
 
 function MemberCard({ member, owner, remove }) {
