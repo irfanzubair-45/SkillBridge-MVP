@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles.css'
 
@@ -36,6 +36,113 @@ function Chip({ children, active, onClick, small = false }) {
 
 function Meter({ value }) {
   return <div className="meter" aria-label={`${value}% ready`}><div className="meter-fill" style={{ width: `${value}%` }} /></div>
+}
+
+function ClickSpark({
+  sparkColor = '#b8ff6c',
+  sparkSize = 10,
+  sparkRadius = 15,
+  sparkCount = 8,
+  duration = 400,
+  easing = 'ease-out',
+  extraScale = 1,
+  children,
+}) {
+  const canvasRef = useRef(null)
+  const sparksRef = useRef([])
+  const animationFrameRef = useRef(null)
+
+  const easeFunc = useCallback((progress) => {
+    switch (easing) {
+      case 'linear':
+        return progress
+      case 'ease-in':
+        return progress * progress
+      case 'ease-in-out':
+        return progress < 0.5 ? 2 * progress * progress : -1 + (4 - 2 * progress) * progress
+      default:
+        return progress * (2 - progress)
+    }
+  }, [easing])
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const parent = canvas?.parentElement
+    if (!canvas || !parent) return undefined
+
+    const resizeCanvas = () => {
+      const { width, height } = parent.getBoundingClientRect()
+      const pixelRatio = window.devicePixelRatio || 1
+      canvas.width = Math.max(1, Math.round(width * pixelRatio))
+      canvas.height = Math.max(1, Math.round(height * pixelRatio))
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
+      canvas.getContext('2d')?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+    }
+
+    const observer = new ResizeObserver(resizeCanvas)
+    observer.observe(parent)
+    resizeCanvas()
+
+    return () => observer.disconnect()
+  }, [])
+
+  const draw = useCallback((timestamp) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const context = canvas.getContext('2d')
+    context.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight)
+
+    sparksRef.current = sparksRef.current.filter((spark) => {
+      const elapsed = timestamp - spark.startTime
+      if (elapsed >= duration) return false
+
+      const progress = elapsed / duration
+      const eased = easeFunc(progress)
+      const distance = eased * sparkRadius * extraScale
+      const lineLength = sparkSize * (1 - eased)
+      const x1 = spark.x + distance * Math.cos(spark.angle)
+      const y1 = spark.y + distance * Math.sin(spark.angle)
+      const x2 = spark.x + (distance + lineLength) * Math.cos(spark.angle)
+      const y2 = spark.y + (distance + lineLength) * Math.sin(spark.angle)
+
+      context.strokeStyle = sparkColor
+      context.globalAlpha = 1 - eased
+      context.lineWidth = 2
+      context.beginPath()
+      context.moveTo(x1, y1)
+      context.lineTo(x2, y2)
+      context.stroke()
+      return true
+    })
+
+    context.globalAlpha = 1
+    animationFrameRef.current = sparksRef.current.length > 0 ? requestAnimationFrame(draw) : null
+  }, [duration, easeFunc, extraScale, sparkColor, sparkRadius, sparkSize])
+
+  useEffect(() => () => {
+    if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+  }, [])
+
+  const handleClick = (event) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const now = performance.now()
+    const x = event.clientX - rect.left
+    const y = event.clientY - rect.top
+
+    sparksRef.current.push(...Array.from({ length: sparkCount }, (_, index) => ({
+      x,
+      y,
+      angle: (2 * Math.PI * index) / sparkCount,
+      startTime: now,
+    })))
+
+    if (!animationFrameRef.current) animationFrameRef.current = requestAnimationFrame(draw)
+  }
+
+  return <div className="click-spark" onClick={handleClick}><canvas ref={canvasRef} aria-hidden="true" />{children}</div>
 }
 
 function App() {
@@ -214,7 +321,8 @@ function App() {
     setNotice('')
   }
 
-  return <main>
+  return <ClickSpark>
+    <main>
     <nav className="nav wrap">
       <button className="brand" onClick={() => setView('home')} aria-label="SkillBridge home"><span className="brand-mark"><Icon name="spark" size={18} /></span>SkillBridge</button>
       <div className="nav-links">
@@ -321,7 +429,8 @@ function App() {
       </>}
     </section>}
     <footer className="wrap"><span className="brand-mark mini"><Icon name="spark" size={13} /></span> SkillBridge · Build complementary teams, transparently.</footer>
-  </main>
+    </main>
+  </ClickSpark>
 }
 
 function MemberCard({ member, owner, remove }) {
