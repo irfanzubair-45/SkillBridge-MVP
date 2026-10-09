@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"SkillBridge Home"},{"path":"/profile","title":"Profile"},{"path":"/matches","title":"Matches"},{"path":"/team","title":"Team Dashboard"},{"path":"/team-builder","title":"Team Builder"},{"path":"/projects","title":"Browse Projects"},{"path":"/projects/:id","title":"Project"}]}
