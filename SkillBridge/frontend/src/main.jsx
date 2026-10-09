@@ -148,75 +148,130 @@ function ClickSpark({
 function ParticleField() {
   const canvasRef = useRef(null)
   const frameRef = useRef(null)
-  const pointerRef = useRef({ x: -1000, y: -1000 })
+  const pointerRef = useRef({ x: -1000, y: -1000, previousX: -1000, previousY: -1000 })
 
   useEffect(() => {
     const canvas = canvasRef.current
     const context = canvas?.getContext('2d')
-    if (!canvas || !context) return undefined
+    const container = canvas?.parentElement
+    if (!canvas || !context || !container) return undefined
+
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const particles = []
+    const palette = ['#B6FF4F', '#8B5CF6', '#2DD4BF']
+    const trail = []
     let width = 0
     let height = 0
+    let scale = 1
+    let time = 0
+    let lastTime = 0
+    let gridOffset = 0
     let isVisible = !document.hidden
 
     const resize = () => {
-      width = canvas.parentElement.clientWidth
-      height = canvas.parentElement.clientHeight
-      canvas.width = width
-      canvas.height = height
-      const count = window.innerWidth < 600 ? 18 : 36
-      particles.length = 0
-      for (let index = 0; index < count; index += 1) {
-        particles.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
-          vx: (Math.random() - 0.5) * 0.12,
-          vy: (Math.random() - 0.5) * 0.12,
-          radius: Math.random() * 1.8 + 0.7,
-          color: ['#B6FF4F', '#8B5CF6', '#2DD4BF'][index % 3],
-        })
+      width = container.clientWidth
+      height = container.clientHeight
+      scale = Math.min(window.devicePixelRatio || 1, 1.5)
+      canvas.width = Math.max(1, Math.round(width * scale))
+      canvas.height = Math.max(1, Math.round(height * scale))
+      canvas.style.width = `${width}px`
+      canvas.style.height = `${height}px`
+      context.setTransform(scale, 0, 0, scale, 0, 0)
+    }
+
+    const drawGrid = () => {
+      const size = window.innerWidth < 600 ? 34 : 46
+      context.lineWidth = 0.65
+      context.strokeStyle = 'rgba(139, 92, 246, 0.12)'
+      context.beginPath()
+      for (let x = -height; x < width + height; x += size) {
+        const offset = (gridOffset + x * 0.14) % (size * 2)
+        context.moveTo(x + offset, 0)
+        context.lineTo(x + offset + height, height)
+      }
+      context.stroke()
+      context.strokeStyle = 'rgba(45, 212, 191, 0.06)'
+      context.beginPath()
+      for (let x = -height; x < width + height; x += size * 2) {
+        const offset = (gridOffset * 0.55 + x * 0.08) % (size * 2)
+        context.moveTo(x + offset, 0)
+        context.lineTo(x + offset - height, height)
+      }
+      context.stroke()
+    }
+
+    const drawWaves = () => {
+      const gap = window.innerWidth < 600 ? 42 : 54
+      for (let row = -2; row < Math.ceil(height / gap) + 2; row += 1) {
+        const baseY = row * gap + 14
+        context.beginPath()
+        for (let x = -20; x <= width + 20; x += 18) {
+          const wave = Math.sin(x * 0.009 + time * 0.00055 + row * 0.7) * 8 + Math.sin(x * 0.019 - time * 0.00032) * 4
+          const dx = x - pointerRef.current.x
+          const dy = baseY - pointerRef.current.y
+          const distance = Math.hypot(dx, dy)
+          const cursorPush = distance < 155 ? (1 - distance / 155) * 13 : 0
+          const y = baseY + wave + (dy / Math.max(distance, 1)) * cursorPush
+          if (x === -20) context.moveTo(x, y)
+          else context.lineTo(x, y)
+        }
+        context.strokeStyle = row % 4 === 0 ? 'rgba(182, 255, 79, 0.17)' : 'rgba(168, 179, 207, 0.08)'
+        context.lineWidth = row % 4 === 0 ? 1 : 0.55
+        context.stroke()
       }
     }
 
-    const draw = () => {
-      if (!isVisible) return
-      context.clearRect(0, 0, width, height)
-      particles.forEach((particle) => {
-        if (!reducedMotion.matches) {
-          particle.x += particle.vx
-          particle.y += particle.vy
-          if (particle.x < -10 || particle.x > width + 10) particle.vx *= -1
-          if (particle.y < -10 || particle.y > height + 10) particle.vy *= -1
-        }
-        const dx = pointerRef.current.x - particle.x
-        const dy = pointerRef.current.y - particle.y
-        const distance = Math.hypot(dx, dy)
-        if (distance < 140 && !reducedMotion.matches) {
-          particle.x -= dx / 2600
-          particle.y -= dy / 2600
-        }
-        context.fillStyle = particle.color
-        context.globalAlpha = 0.34
+    const drawThreads = () => {
+      const count = window.innerWidth < 600 ? 5 : 8
+      for (let index = 0; index < count; index += 1) {
+        const progress = index / Math.max(count - 1, 1)
+        const y = height * (0.18 + progress * 0.68)
+        const amplitude = 16 + progress * 30
         context.beginPath()
-        context.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2)
+        for (let x = -30; x <= width + 30; x += 20) {
+          const drift = Math.sin(x * 0.006 + time * 0.0003 + index) * amplitude + Math.sin(x * 0.014 - time * 0.00018) * 8
+          const dx = x - pointerRef.current.x
+          const distance = Math.abs(dx)
+          const pull = distance < 190 ? (1 - distance / 190) * 18 : 0
+          const pointY = y + drift + (pointerRef.current.y - y) * (pull / 1200)
+          if (x === -30) context.moveTo(x, pointY)
+          else context.lineTo(x, pointY)
+        }
+        const gradient = context.createLinearGradient(0, 0, width, 0)
+        gradient.addColorStop(0, 'rgba(182,255,79,0)')
+        gradient.addColorStop(.3, `${palette[index % palette.length]}55`)
+        gradient.addColorStop(.7, `${palette[(index + 1) % palette.length]}44`)
+        gradient.addColorStop(1, 'rgba(45,212,191,0)')
+        context.strokeStyle = gradient
+        context.lineWidth = index % 3 === 0 ? 1.2 : 0.7
+        context.stroke()
+      }
+    }
+
+    const drawTrail = () => {
+      trail.forEach((point, index) => {
+        const alpha = (1 - index / trail.length) * 0.22
+        context.fillStyle = palette[index % palette.length]
+        context.globalAlpha = alpha
+        context.beginPath()
+        context.arc(point.x, point.y, Math.max(1.5, 5 - index * 0.4), 0, Math.PI * 2)
         context.fill()
       })
-      context.lineWidth = 0.7
-      for (let first = 0; first < particles.length; first += 1) {
-        for (let second = first + 1; second < particles.length; second += 1) {
-          const distance = Math.hypot(particles[first].x - particles[second].x, particles[first].y - particles[second].y)
-          if (distance < 145) {
-            context.globalAlpha = (1 - distance / 145) * 0.12
-            context.strokeStyle = particles[first].color
-            context.beginPath()
-            context.moveTo(particles[first].x, particles[first].y)
-            context.lineTo(particles[second].x, particles[second].y)
-            context.stroke()
-          }
-        }
-      }
       context.globalAlpha = 1
+    }
+
+    const draw = (timestamp = 0) => {
+      if (!isVisible) return
+      const delta = Math.min(timestamp - lastTime || 16, 42)
+      lastTime = timestamp
+      if (!reducedMotion.matches) {
+        time += delta
+        gridOffset = (gridOffset + delta * 0.012) % 92
+      }
+      context.clearRect(0, 0, width, height)
+      drawGrid()
+      drawWaves()
+      drawThreads()
+      drawTrail()
       if (!reducedMotion.matches) frameRef.current = requestAnimationFrame(draw)
     }
 
@@ -226,23 +281,27 @@ function ParticleField() {
     }
     const onPointerMove = (event) => {
       const rect = canvas.getBoundingClientRect()
-      pointerRef.current = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+      const x = event.clientX - rect.left
+      const y = event.clientY - rect.top
+      pointerRef.current = { x, y, previousX: pointerRef.current.x, previousY: pointerRef.current.y }
+      if (!reducedMotion.matches) trail.unshift({ x, y })
+      if (trail.length > 12) trail.length = 12
     }
-    const onPointerLeave = () => { pointerRef.current = { x: -1000, y: -1000 } }
+    const onPointerLeave = () => { pointerRef.current = { x: -1000, y: -1000, previousX: -1000, previousY: -1000 }; trail.length = 0 }
 
     resize()
     draw()
     const observer = new ResizeObserver(resize)
-    observer.observe(canvas.parentElement)
+    observer.observe(container)
     document.addEventListener('visibilitychange', onVisibilityChange)
-    canvas.parentElement.addEventListener('pointermove', onPointerMove)
-    canvas.parentElement.addEventListener('pointerleave', onPointerLeave)
+    container.addEventListener('pointermove', onPointerMove)
+    container.addEventListener('pointerleave', onPointerLeave)
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
       observer.disconnect()
       document.removeEventListener('visibilitychange', onVisibilityChange)
-      canvas.parentElement.removeEventListener('pointermove', onPointerMove)
-      canvas.parentElement.removeEventListener('pointerleave', onPointerLeave)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerleave', onPointerLeave)
     }
   }, [])
 
