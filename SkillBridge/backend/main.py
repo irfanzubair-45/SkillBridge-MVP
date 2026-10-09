@@ -61,6 +61,18 @@ class IdeaRequest(BaseModel):
     team_skills: list[str] = Field(min_length=1, max_length=30)
 
 
+class ProjectRequest(BaseModel):
+    name: Annotated[str, Field(min_length=3, max_length=100)]
+    description: Annotated[str, Field(min_length=12, max_length=1000)]
+    category: Annotated[str, Field(min_length=2, max_length=40)]
+    status: Literal["Open", "Draft"] = "Open"
+    launch_mode: Literal["now", "invites_pending", "draft"] = "now"
+    owner: dict
+    members: list[dict] = Field(default_factory=list, max_length=50)
+    open_roles: list[str] = Field(default_factory=list, max_length=30)
+    invites_pending: list[dict] = Field(default_factory=list, max_length=50)
+
+
 def database_connection() -> sqlite3.Connection:
     connection = sqlite3.connect(DATABASE_PATH)
     connection.row_factory = sqlite3.Row
@@ -79,6 +91,24 @@ def initialize_database() -> None:
                 interests TEXT NOT NULL,
                 availability TEXT NOT NULL,
                 experience TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                category TEXT NOT NULL,
+                status TEXT NOT NULL,
+                launch_mode TEXT NOT NULL,
+                owner TEXT NOT NULL,
+                members TEXT NOT NULL,
+                open_roles TEXT NOT NULL,
+                invites_pending TEXT NOT NULL,
+                milestones TEXT NOT NULL,
                 created_at TEXT NOT NULL
             )
             """
@@ -270,3 +300,73 @@ def project_idea(request: IdeaRequest) -> dict:
         "covered_skills": covered,
         "remaining_gaps": gaps,
     }
+
+
+def project_from_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"],
+        "category": row["category"],
+        "status": row["status"],
+        "launch_mode": row["launch_mode"],
+        "owner": json.loads(row["owner"]),
+        "members": json.loads(row["members"]),
+        "open_roles": json.loads(row["open_roles"]),
+        "invites_pending": json.loads(row["invites_pending"]),
+        "milestones": json.loads(row["milestones"]),
+        "created_at": row["created_at"],
+    }
+
+
+@app.post("/api/projects", status_code=201)
+def create_project(request: ProjectRequest) -> dict:
+    """Persist a project review from Team Builder as Open or Draft."""
+    if not request.owner.get("name") or not request.owner.get("skills"):
+        raise HTTPException(status_code=422, detail="A project owner with profile skills is required.")
+    project_id = str(uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    milestones = [
+        {"id": "first-brief", "label": "Share the project brief", "done": False},
+        {"id": "first-build", "label": "Define the first build milestone", "done": False},
+        {"id": "first-checkin", "label": "Schedule a team check-in", "done": False},
+    ]
+    with database_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO projects (id, name, description, category, status, launch_mode, owner, members, open_roles, invites_pending, milestones, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                project_id,
+                request.name.strip(),
+                request.description.strip(),
+                request.category.strip(),
+                request.status,
+                request.launch_mode,
+                json.dumps(request.owner),
+                json.dumps(request.members),
+                json.dumps(request.open_roles),
+                json.dumps(request.invites_pending),
+                json.dumps(milestones),
+                created_at,
+            ),
+        )
+        row = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    return {"project": project_from_row(row), "message": "Project saved to the SkillBridge database."}
+
+
+@app.get("/api/projects")
+def list_projects() -> dict:
+    with database_connection() as connection:
+        rows = connection.execute("SELECT * FROM projects ORDER BY created_at DESC").fetchall()
+    return {"projects": [project_from_row(row) for row in rows]}
+
+
+@app.get("/api/projects/{project_id}")
+def get_project(project_id: str) -> dict:
+    with database_connection() as connection:
+        row = connection.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Project not found.")
+    return {"project": project_from_row(row)}
